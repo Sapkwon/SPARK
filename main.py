@@ -45,8 +45,8 @@ def parse_args():
     parser.add_argument('--LOAD_RULE', type=bool, default=False, help='Load rules learned by TLogic')
     
     #! Training parameters
-    parser.add_argument("--TRAIN_BS", type=int, default=128, choices = [128, 256, 512], help="Batch size for train")
-    parser.add_argument("--EVAL_BS", type=int, default=128, choices = [128, 256, 512], help="Batch size for evaluating")
+    parser.add_argument("--TRAIN_BS", type=int, default=128, choices = [32, 64, 128, 256, 512], help="Batch size for train")
+    parser.add_argument("--EVAL_BS", type=int, default=128, choices = [32, 64, 128, 256, 512], help="Batch size for evaluating")
     parser.add_argument('--EPOCHS', type=int, default=10, help='Training epochs')
     parser.add_argument('--DR', type=str, default="plateau", help="stepLR/cosine/plateau/onecycle")
     parser.add_argument('--WARMUP_STEPS', type=int, default=100, help='Warmup steps')

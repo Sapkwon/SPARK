@@ -316,11 +316,16 @@ class Trainer:
         
     def save_LLM_output(self, batch_answers, batch_scores, split):
         suffix = ".txt"
-        model_name = self.args.MODEL_NAME.split("/")[-1]
-        path = f"{self.llm_result_path}/{model_name}/{self.args.RAG}"
-        file_name = split+"_ans_"+self.args.DATASET+suffix
+        model_name_for_path = self.args.MODEL_NAME.split("/")[-1] 
         
-        with open(path + "/" + file_name, "a") as f:
+        base_save_path = self.llm_result_path 
+        path = os.path.join(base_save_path, model_name_for_path, self.args.RAG)
+        file_name = f"{split}_ans_{self.args.DATASET}{suffix}"
+        full_file_path = os.path.join(path, file_name)
+
+        os.makedirs(path, exist_ok=True) 
+
+        with open(full_file_path, "a") as f:
             for i in range(len(batch_answers)):
                 #format to tuple list
                 tuple_list = [(ent, score) for ent, score in zip(batch_answers[i], batch_scores[i])]
