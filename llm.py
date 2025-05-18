@@ -1,3 +1,4 @@
+import os
 import re
 import torch
 from transformers import LlamaTokenizer, LlamaForCausalLM, LlamaModel, BitsAndBytesConfig
@@ -39,16 +40,16 @@ class LLMGenerator:
             
     def get_model_and_tokenizer(self):
         try:
-            llm_config = AutoConfig.from_pretrained(self.args.MODEL_NAME)
+            llm_config = AutoConfig.from_pretrained(self.args.MODEL_NAME, trust_remote_code=True)
         except:
             llm_config = None
         ori_device = self.args.DEVICE
         
         if self.args.DEVICE == -1 or self.args.TEST_ADAPTER or self.args.LOAD_LLM:
-            # only load the tokenizer
             model = None
-            tokenizer = LlamaTokenizer.from_pretrained("../LLM/lmsys/llama-2-7b-hf", trust_remote_code=True)
-            llm_config = AutoConfig.from_pretrained("../LLM/lmsys/llama-2-7b-hf")
+            tokenizer = AutoTokenizer.from_pretrained(self.args.MODEL_NAME, trust_remote_code=True) 
+            if llm_config is None : 
+                llm_config = AutoConfig.from_pretrained(self.args.MODEL_NAME, trust_remote_code=True) 
             return model, tokenizer, llm_config
         
         else:
@@ -84,23 +85,20 @@ class LLMGenerator:
         return model, tokenizer, llm_config
     
     def get_ent_rel_emb(self, rel2id, ent2id):
-        # Load llama-2-7b-hf for initial entity and relation embeddings
         all_ent = list(ent2id.keys()) + ['PAD']
-        all_rel = list(rel2id.keys()) + ['PAD']
-        if self.model is None:
-            emb_model = LlamaModel.from_pretrained("../LLM/lmsys/llama-2-7b-hf", trust_remote_code=True).to(self.args.DEVICE)            
-            with torch.no_grad():
-                input_ents = self.tokenizer(all_ent, return_tensors='pt', padding=True, truncation=True, max_length=256).input_ids.to(self.args.DEVICE)
-                input_rels = self.tokenizer(all_rel, return_tensors='pt', padding=True, truncation=True, max_length=256).input_ids.to(self.args.DEVICE)
-                embedding_layer = emb_model.embed_tokens
-                ent_embedding = embedding_layer(input_ents).mean(dim=1) # [num_ent, dim]
-                rel_embedding = embedding_layer(input_rels).mean(dim=1) # [num_rel, dim]
-                torch.save(torch.cat([ent_embedding, rel_embedding], dim=0), './data/original/'+ self.args.DATASET +'/ent_rel_emb.pt')
-            del emb_model
-        else:
-            embedding = torch.load('./data/original/'+ self.args.DATASET +'/ent_rel_emb.pt')
-            ent_embedding = embedding[:len(all_ent)]
-            rel_embedding = embedding[len(all_ent):]
+        all_rel = list(rel2id.keys()) + ['PAD'] 
+        embedding_file_path = os.path.join(self.args.ORI_DATA_PATH, self.args.DATASET, 'ent_rel_emb.pt')
+
+        if not os.path.exists(embedding_file_path):
+            raise FileNotFoundError(
+                f"Embedding file not found: {embedding_file_path}. "
+                f"Please generate it first using a dedicated script (e.g., generate_initial_embeddings.py)."
+            )
+
+        print(f"Loading pre-generated embedding file from: {embedding_file_path}")
+        embedding = torch.load(embedding_file_path, map_location=self.args.DEVICE)
+        ent_embedding = embedding[:len(all_ent)]
+        rel_embedding = embedding[len(all_ent):]
         return ent_embedding, rel_embedding
             
             

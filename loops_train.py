@@ -111,7 +111,18 @@ class Trainer:
         
         #clear exist results
         if self.args.SAVE_LLM:
-            self.clear_LLM_output()
+            self.rules = {} # 또는 None
+            self.args.rule_num = 0
+            if os.path.exists("./data/rule_output/" + self.args.DATASET): # 경로 존재 여부만 확인 (오류 방지)
+                print("SAVE_LLM mode: Rule loading skipped, but rule directory exists.")
+            else:
+                print("SAVE_LLM mode: Rule loading skipped, rule directory does not exist (this is fine).")
+        elif self.args.ADAPTER_NAME == "TLogic":
+            self.rules = load_rules("./data/rule_output/" + self.args.DATASET, args)
+            # args.LOAD_RULE = True 는 main.py에서 이미 처리됨
+        else:
+            self.rules = {} # 또는 None
+            self.args.rule_num = 0
 
     def get_data_loader(self, data_splits):
         self.data_iter = {}
@@ -166,8 +177,10 @@ class Trainer:
                     batch_answers, batch_scores, ent_distribution = self.model.forward(batch)
                 
                 if self.args.SAVE_LLM:
-                    self.save_LLM_output(batch_answers, batch_scores, 'train')
-                        
+                    batch_answers, batch_scores, ent_distribution = self.model.forward(batch)
+                    self.save_LLM_output(batch_answers, batch_scores, 'train') 
+                    continue 
+
                 # calculate loss
                 if self.optimizer is not None:
                     if self.args.LOSS_TYPE == "target_loss":
@@ -262,7 +275,12 @@ class Trainer:
                     batch_answers, batch_scores, ent_distribution = self.model.forward(batch)
                     
                 if self.args.SAVE_LLM:
-                    self.save_LLM_output(batch_answers, batch_scores, split)
+                    _batch_answers, _batch_scores, _ent_distribution = self.model.forward(batch) 
+                    self.save_LLM_output(_batch_answers, _batch_scores, split) 
+                elif self.args.LOSS_TYPE == "target_loss": 
+                    entity_att_score, entities, ent_distribution = self.model.forward(batch)
+                else: 
+                    batch_answers, batch_scores, ent_distribution = self.model.forward(batch)
                 results = self.cal_metrics_all(ent_distribution, batch["batch_targets"], batch["batch_at_distribution"], results)
                 print(results)
         return results
