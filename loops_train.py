@@ -76,7 +76,30 @@ class Trainer:
         if self.args.ADAPTER_NAME is not None:
             self.apth = "model_checkpoints/" + self.args.DATASET + "-" + self.args.ADAPTER_NAME + ".pt"
             if self.args.LOAD_ADAPTER and os.path.exists(self.apth):
-                self.adapter_model = torch.load(self.apth, map_location = self.args.DEVICE) 
+                self.adapter_model = torch.load(self.apth, map_location = self.args.DEVICE)
+            elif self.args.ADAPTER_NAME == "LLM-DA":
+                try:
+                    from llm_da_adapter import LLMDA_Adapter # 실제 파일명과 클래스명으로 수정
+                except ImportError:
+                    raise ImportError("LLMDA_Adapter class not found. Make sure llm_da_adapter.py is in the correct path.")
+
+                if not hasattr(self.args, 'LLMDA_RULES_PATH') or self.args.LLMDA_RULES_PATH is None or not os.path.exists(self.args.LLMDA_RULES_PATH):
+                    raise ValueError("Path to LLM-DA ranked rules file (--LLMDA_RULES_PATH) must be provided and valid for LLM-DA adapter.")
+
+                # 어댑터가 사용할 TKG 팩트 데이터 준비 (예: 학습 데이터의 사실들)
+                # self.ori_facts는 {'train': Nx4_array, ...} 형태
+                if 'train' in self.ori_facts and self.ori_facts['train'] is not None:
+                    tkg_facts_for_llm_da_adapter = self.ori_facts['train']
+                else:
+                    raise ValueError("Training facts (self.ori_facts['train']) are not available for LLMDA_Adapter.")
+                
+                print(f"Initializing LLMDA_Adapter with rules from: {self.args.LLMDA_RULES_PATH}")
+                self.adapter_model = LLMDA_Adapter(
+                    self.args,
+                    vocab_dict, # SPARK의 vocab_dict
+                    tkg_facts_for_llm_da_adapter,
+                    self.args.LLMDA_RULES_PATH
+                ) 
             else:
                 self.adapter_model = globals()[args.ADAPTER_NAME](self.args, 
                                                               rules = self.rules, 

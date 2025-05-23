@@ -38,7 +38,7 @@ def parse_args():
     parser.add_argument('--DATASET', type=str, default="GDELT", choices=["icews14", "icews18", "GDELT"], help='Name of dataset')
     
     #! Adapter parameters
-    parser.add_argument('--ADAPTER_NAME', type=str, default=None, choices=["TLogic", "xERTE", None], help='Adapter model name')
+    parser.add_argument('--ADAPTER_NAME', type=str, default=None, choices=["TLogic", "xERTE", "LLM-DA", None], help='Adapter model name')
     parser.add_argument('--LOAD_ADAPTER', type=bool, default=False, help='Load adapter checkpoint')
     parser.add_argument('--TEST_ADAPTER', type=bool, default=False, help='Only use and test adapter or not')
     parser.add_argument('--EMBEDDING_DIM', type=int, default=200, help='Embedding dimension')
@@ -69,6 +69,29 @@ def parse_args():
     parser.add_argument('--max_attended_edges', type=int, default=40, help='Max attended edges for xERTE') #icews14:40, icews18:60
     parser.add_argument('--ratio_update', type=float, default=0, help='Ratio update for xERTE') #icews14:0, icews18:0.75
     
+    # --- LLM-DA Adapter ---
+    parser.add_argument('--LLMDA_RULES_PATH', type=str, default=None, 
+                        help='Path to pre-computed LLM-DA ranked rules file (e.g., ranked_rules/icews14/confidence.json)')
+    parser.add_argument('--LLMDA_lmbda', type=float, default=0.1, 
+                        help='Lambda for temporal decay in LLM-DA scoring (score_functions.py)')
+    parser.add_argument('--LLMDA_weight0', type=float, default=0.5, 
+                        help='Weight (alpha) between rule confidence and temporal score in LLM-DA (score_functions.py score_12)')
+    parser.add_argument('--LLMDA_confidence_type', type=str, default="Common", 
+                        choices=['Common', 'LLM', 'And', 'Or'], 
+                        help='Confidence type for LLM-DA rules (score_functions.py score1)')
+    parser.add_argument('--LLMDA_weight', type=float, default=0.0, 
+                        help='Weight for LLM confidence if confidence_type is And/Or for LLM-DA (score_functions.py score1)')
+    # parser.add_argument('--LLMDA_min_conf', type=float, default=0.01, help='Min confidence for LLM-DA (used in rule filtering, not directly in scoring here)')
+    parser.add_argument('--LLMDA_coor_weight', type=float, default=0.0, 
+                        help='Coordination weight for LLM-DA scoring (score_functions.py score_12)')
+    parser.add_argument('--LLMDA_score_type', type=str, default="noisy-or", 
+                        choices=['noisy-or', 'sum', 'mean', 'min', 'max'], 
+                        help='Score aggregation type for LLM-DA candidates (reasoning.py)')
+    parser.add_argument('--LLMDA_is_relax_time', type=str_to_bool, default='no',
+                        help='Whether to use relaxed time for LLM-DA rule walks (rule_application.py)')
+    parser.add_argument('--LLMDA_is_sample', type=str_to_bool, default='no',
+                        help='Whether to sample edges in LLM-DA match_body_relations (rule_application.py)')
+                        
     return parser.parse_args()
 
 if __name__ == "__main__":
