@@ -7,6 +7,16 @@ from loops_train import Trainer
 import torch.multiprocessing as mp
 
 
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif value.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 def generate_run_name(model_name, time=None):
     run_name = model_name + "_"
     if time is None:

@@ -79,47 +79,65 @@ class Trainer:
                 self.adapter_model = torch.load(self.apth, map_location = self.args.DEVICE)
             elif self.args.ADAPTER_NAME == "LLM-DA":
                 try:
-                    from llm_da_adapter import LLMDA_Adapter # 실제 파일명과 클래스명으로 수정
+                    from adapter_model.LLM_DA_adapter import LLMDA_Adapter
                 except ImportError:
                     raise ImportError("LLMDA_Adapter class not found. Make sure llm_da_adapter.py is in the correct path.")
 
                 if not hasattr(self.args, 'LLMDA_RULES_PATH') or self.args.LLMDA_RULES_PATH is None or not os.path.exists(self.args.LLMDA_RULES_PATH):
                     raise ValueError("Path to LLM-DA ranked rules file (--LLMDA_RULES_PATH) must be provided and valid for LLM-DA adapter.")
 
-                # 어댑터가 사용할 TKG 팩트 데이터 준비 (예: 학습 데이터의 사실들)
-                # self.ori_facts는 {'train': Nx4_array, ...} 형태
                 if 'train' in self.ori_facts and self.ori_facts['train'] is not None:
-                    tkg_facts_for_llm_da_adapter = self.ori_facts['train']
+                    # 기존: tkg_facts_for_llm_da_adapter = self.ori_facts['train']
+                    # 수정:
+                    if isinstance(self.ori_facts['train'], list): # 만약 리스트라면 NumPy 배열로 변환
+                        tkg_facts_for_llm_da_adapter = np.array(self.ori_facts['train'])
+                        print(f"Converted self.ori_facts['train'] from list to NumPy array with shape: {tkg_facts_for_llm_da_adapter.shape}")
+                    elif isinstance(self.ori_facts['train'], np.ndarray):
+                        tkg_facts_for_llm_da_adapter = self.ori_facts['train']
+                    else:
+                        raise TypeError(f"self.ori_facts['train'] is of unexpected type: {type(self.ori_facts['train'])}. Expected list or numpy.ndarray.")
                 else:
-                    raise ValueError("Training facts (self.ori_facts['train']) are not available for LLMDA_Adapter.")
-                
+                    raise ValueError("Training facts (self.ori_facts['train']) are not available or not in the expected format for LLMDA_Adapter.")
+
                 print(f"Initializing LLMDA_Adapter with rules from: {self.args.LLMDA_RULES_PATH}")
                 self.adapter_model = LLMDA_Adapter(
                     self.args,
-                    vocab_dict, # SPARK의 vocab_dict
-                    tkg_facts_for_llm_da_adapter,
+                    vocab_dict,
+                    tkg_facts_for_llm_da_adapter, # 이제 NumPy 배열이 전달됨
                     self.args.LLMDA_RULES_PATH
-                ) 
+                )
             else:
                 self.adapter_model = globals()[args.ADAPTER_NAME](self.args, 
                                                               rules = self.rules, 
                                                               base_graph = self.graphs)
                                                               #DP_steps=4,
                                                               #emb_dim=[256, 128, 64, 32, 16])
-            self.adapter_model.to(self.args.DEVICE)
-            if self.adapter_model.parameters() is not None:
-                self.optimizer = torch.optim.AdamW(self.adapter_model.parameters(), lr=self.args.LEARNING_RATE)
-                if self.args.DR == "plateau":
-                    self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", patience=1, factor=0.8, min_lr=1e-7, verbose=False)
-                elif self.args.DR == "onecycle":
-                    self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer, max_lr=self.args.LEARNING_RATE, steps_per_epoch=50, epochs=self.args.EPOCHS)
-                elif self.args.DR == "cosine":
-                    self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=50, eta_min=0)
-                elif self.args.DR == "stepLR":
-                    #self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.args.EPOCHS*len(data['train'])//args.TRAIN_BS, gamma=0.1)
-                    self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=50, gamma=0.9)
-                self.scaler = amp.GradScaler()
+            if self.adapter_model: 
+                self.adapter_model.to(self.args.DEVICE)
+              
+                adapter_trainable_params = [p for p in self.adapter_model.parameters() if p.requires_grad]
                 
+                if len(adapter_trainable_params) > 0: 
+                    print(f"Adapter '{self.args.ADAPTER_NAME}' has {len(adapter_trainable_params)} trainable parameters. Initializing optimizer.")
+                    self.optimizer = torch.optim.AdamW(adapter_trainable_params, lr=self.args.LEARNING_RATE)
+                    
+                    # 스케줄러 설정 등은 여기에 이어서 작성
+                    if self.args.DR == "plateau":
+                        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", patience=1, factor=0.8, min_lr=1e-7, verbose=False)
+                    elif self.args.DR == "onecycle":
+                        self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer, max_lr=self.args.LEARNING_RATE, steps_per_epoch=50, epochs=self.args.EPOCHS)
+                    elif self.args.DR == "cosine":
+                        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=50, eta_min=0)
+                    elif self.args.DR == "stepLR":
+                        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=50, gamma=0.9)
+                    # self.scaler = amp.GradScaler() # 아래에서 torch.cuda.amp.GradScaler()로 수정
+                    self.scaler = torch.cuda.amp.GradScaler() # PyTorch 1.6+ 권장 방식
+                else:
+                    print(f"Adapter '{self.args.ADAPTER_NAME}' has no trainable parameters. Optimizer not initialized.")
+                    self.optimizer = None # 옵티마이저가 필요 없음을 명시적으로 설정
+                    self.scheduler = None # 스케줄러도 필요 없음
+                    self.scaler = None    # 스케일러도 필요 없음
+
         # init model
         self.model = MainModel(self.adapter_model, self.llm_gen, vocab_dict, args)
         self.model.to(self.args.DEVICE)
@@ -228,18 +246,26 @@ class Trainer:
 
                 # report train result
                 if self.args.WANDB:
-                    #train_time = time.time() - start_train
-                    if hasattr(self.scheduler, '_last_lr'):
-                        wandb.log({"epoch": epoch, "loss": float(per_epoch_loss[-1]),
-                                   'lr': float(self.scheduler._last_lr[0])})
-                    else:
-                        wandb.log({"epoch": epoch, "loss": float(per_epoch_loss[-1]), 
-                                   'lr': float(self.optimizer.param_groups[0]['lr'])})  
-                    for key, value in results.items():
-                        if "c" in key:
-                            continue
-                        else:
-                            wandb.log({f"train/{key}":value ,"epoch": epoch})             
+                    log_data_wandb = {"epoch": epoch} # 기본 로그 데이터
+                    
+                    # 옵티마이저와 per_epoch_loss 상태에 따라 로그 데이터 추가
+                    if self.optimizer is not None and per_epoch_loss: # 옵티마이저가 있고, loss가 기록되었을 때
+                        log_data_wandb["loss"] = float(per_epoch_loss[-1])
+                        if hasattr(self.scheduler, '_last_lr') and self.scheduler._last_lr: # 스케줄러와 lr이 있을 때
+                            log_data_wandb['lr'] = float(self.scheduler._last_lr[0])
+                        elif self.optimizer.param_groups: # 옵티마이저에 param_groups가 있을 때
+                             log_data_wandb['lr'] = float(self.optimizer.param_groups[0]['lr'])
+                    elif self.optimizer is None: # 옵티마이저가 없는 경우 (어댑터 학습 안 함)
+                        log_data_wandb["loss"] = 0.0 # 또는 -1.0 등 학습 안 함을 나타내는 값
+                        log_data_wandb['lr'] = 0.0   # 또는 -1.0
+
+                    # 메트릭 로깅 (results가 None이 아닐 때)
+                    if results:
+                        for key, value in results.items():
+                            if "c" not in key: # c1, c3 등 raw count는 제외하고 hits@, mrr 등 비율만 로깅 (선택 사항)
+                                log_data_wandb[f"train/{key}"] = value
+                    
+                    wandb.log(log_data_wandb) # 최종적으로 구성된 데이터로 로깅             
             
             # scheduler
             if self.optimizer is not None:

@@ -19,22 +19,22 @@ import pandas as pd # LLM-DA의 rule_application.py가 pandas를 사용합니다
 # LLM-DA의 grapher.py, temporal_walk.py 등은 SPARK의 것과 역할이 겹칠 수 있으므로,
 # 규칙 적용에 필요한 최소한의 함수만 가져오거나, 이름 충돌을 피하도록 주의합니다.
 
-try:
-    # LLM-DA의 규칙 적용 및 점수 계산 로직 (가장 중요)
-    from rule_application import match_body_relations, get_walks, get_candidates
-    from score_functions import score_12 # LLM-DA에서 사용하는 주된 점수 함수로 가정 (또는 다른 함수)
-    from reasoning import calculate_scores as calculate_llm_da_candidate_scores # 이름 변경하여 충돌 방지
-    from reasoning import load_rules as load_llm_da_rules_from_file # 이름 변경
-    
-    # LLM-DA의 TKG 데이터(엣지)를 준비하는 데 필요할 수 있음
-    from temporal_walk import store_edges as store_llm_da_edges # 이름 변경
-except ImportError as e:
-    print(f"LLM-DA 모듈 임포트 중 오류 발생: {e}")
-    print("LLM-DA의 rule_application.py, score_functions.py, reasoning.py, temporal_walk.py 등의 파일이")
-    print("Python이 찾을 수 있는 경로에 있고, 필요한 함수들이 해당 파일에 정의되어 있는지 확인해주세요.")
-    print("SPARK 프로젝트 내에 LLM-DA 코드 파일을 특정 폴더(예: 'llm_da_src')에 넣고,")
-    print("from llm_da_src.rule_application import ... 와 같이 경로를 지정하는 것을 권장합니다.")
-    raise # 오류 발생시켜서 확인하고 수정하도록 함
+import sys
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+spark_sapkwon_dir = os.path.dirname(current_dir)
+llm_da_src_path = os.path.join(spark_sapkwon_dir, "llm_da_src")
+
+if llm_da_src_path not in sys.path:
+    sys.path.insert(0, llm_da_src_path) 
+
+from rule_application import match_body_relations, get_walks, get_candidates
+from score_functions import score_12
+from reasoning import calculate_scores as calculate_llm_da_candidate_scores
+from reasoning import load_rules as load_llm_da_rules_from_file
+from temporal_walk import store_edges as store_llm_da_edges
+
 # === LLM-DA 모듈 임포트 끝 ===
 
 
@@ -196,4 +196,35 @@ class LLMDA_Adapter(nn.Module):
                 # 지금은 원시 점수를 그대로 전달한다고 가정
                 pass
 
-        return batch_adapter_distribution.to(self.args_spark.DEVICE)
+        # ... (batch_adapter_distribution 계산 로직) ...
+
+        # --- rule_scores 생성 (예시) ---
+        # 현재 배치에서 사용된 규칙들의 평균 신뢰도를 계산하거나,
+        # 혹은 예측된 후보들에 기여한 규칙들의 신뢰도 정보를 집계할 수 있습니다.
+        # 이는 LLM-DA의 규칙 포맷과 get_candidates 함수의 반환값을 어떻게 활용할지에 따라 달라집니다.
+        # 가장 간단한 형태는 현재 어댑터가 사용하는 전체 규칙의 평균 신뢰도 같은 고정값일 수도 있고,
+        # 또는 배치 내 각 쿼리별로 대표적인 규칙 신뢰도를 계산할 수도 있습니다.
+
+        # 예시: 현재 쿼리에 대해 가장 높은 점수를 받은 후보를 만든 규칙의 신뢰도를 사용 (매우 단순화된 로직)
+        # 이 부분은 실제 LLM-DA 규칙 적용 방식과 get_candidates의 상세 출력을 보고 정교하게 만들어야 합니다.
+        # 지금은 더미값으로 0.0을 사용하거나, 간단한 집계값을 사용합니다.
+        # 예를 들어, 모든 규칙의 평균 신뢰도를 사용할 수도 있습니다.
+        # all_confidences = []
+        # if self.llm_da_rules_dict:
+        #     for rel_rules in self.llm_da_rules_dict.values():
+        #         for rule in rel_rules:
+        #             all_confidences.append(rule.get('conf', 0.0)) # 'conf' 키가 있다고 가정
+        # aggregated_rule_score_for_batch = torch.tensor(np.mean(all_confidences) if all_confidences else 0.0, device=self.args_spark.DEVICE)
+        # 이 값은 배치 전체에 대한 단일 값이 될 수도 있고, 각 샘플별 값일 수도 있습니다.
+        # TLogic은 [rule_nums, 1] 형태의 텐서를 반환하는 것으로 보이므로, 그 형태를 맞추거나
+        # MainModel이 이 값을 어떻게 사용하는지 확인해야 합니다.
+        # 지금은 배치 내 각 샘플에 대해 동일한 값 또는 대표값을 갖는 텐서로 가정합니다.
+        
+        # 우선은 간단하게, 각 샘플에 대해 (만약 후보가 있다면) 가장 높은 후보 점수를 규칙 점수로 사용한다고 가정 (실제로는 규칙 신뢰도 등을 사용해야 함)
+        # 또는, MainModel이 이 값을 어떻게 사용하는지 확인 후, 사용하지 않는다면 None으로 두는 것이 안전합니다.
+        # MainModel에서 rule_scores를 실제로 사용하지 않는다면, None으로 반환하는 것이 가장 간단합니다.
+        # 현재 model.py에서는 xERTE가 아닐 때 rule_scores를 받지만, fusion 로직에서는 직접 사용하지 않는 것으로 보입니다.
+        generated_rule_scores = None # 또는 torch.zeros(bsz, 1).to(self.args_spark.DEVICE) # 더미 텐서
+
+            # --- rule_scores 생성 끝 ---
+        return batch_adapter_distribution.to(self.args_spark.DEVICE), generated_rule_scores
