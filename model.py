@@ -51,13 +51,16 @@ class MainModel(nn.Module):
             llm_ent_distribution = batch_data["batch_LLM_result"]
         elif self.llm_gen.model is not None:
             batch_answers, batch_scores, llm_ent_distribution = self.llm_gen.forward(batch_data)
-
+        
+        if adpter_distribution is not None:
+            if adpter_distribution.sum() > 0: 
+                adpter_distribution = torch.softmax(adpter_distribution, dim=-1)
         
         # fusion
         if llm_ent_distribution is not None and adpter_distribution is not None:
             if self.args.ADAPTER_NAME != "xERTE":
-                lamda = 0.5
-            #lamda = 0.5
+                lamda = 0.2
+            #lamda = 0.2
             llm_ent_distribution = llm_ent_distribution.to(self.args.DEVICE)
             ent_distribution = lamda*adpter_distribution + (1-lamda)*llm_ent_distribution
             # ent_distribution = torch.mul(adpter_distribution + 1e-4, llm_ent_distribution + 1e-4)
@@ -155,7 +158,7 @@ class MainModel(nn.Module):
             #select ent_distribution[i] where is not 0
             ent_idx = torch.nonzero(ent_distribution[i]).squeeze(1)
             entity_att_score = ent_distribution[i][ent_idx]
-            entity_att_score = torch.nn.functional.softmax(entity_att_score)
+            entity_att_score = torch.nn.functional.softmax(entity_att_score, dim = -1)
             entity_att_scores.append(entity_att_score)
             entities += [[i, int(v)] for v in ent_idx]
         entity_att_scores = torch.cat(entity_att_scores, dim=0)

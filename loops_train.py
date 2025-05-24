@@ -318,10 +318,6 @@ class Trainer:
         with torch.no_grad():
             for i, batch in enumerate(tqdm(self.data_iter[split], desc=f"Epoch {epoch}")):
                 batch = self.batch_to_device(batch, self.args.DEVICE)
-                if self.args.LOSS_TYPE == "target_loss" and self.args.SAVE_LLM is False:
-                    entity_att_score, entities, ent_distribution = self.model.forward(batch)
-                else:
-                    batch_answers, batch_scores, ent_distribution = self.model.forward(batch)
                     
                 if self.args.SAVE_LLM:
                     _batch_answers, _batch_scores, _ent_distribution = self.model.forward(batch) 
